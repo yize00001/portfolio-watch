@@ -67,3 +67,34 @@ copy .env.example .env
 - 完成 Telegram Bot 通知
 - 加入交易時間排程
 - 加入停利、停損、漲跌幅門檻設定
+
+## Handoff
+
+目前狀態：
+
+- Python MVP 骨架已建立
+- GitHub private repo 已建立並 push 到 `main`
+- CLI 可使用 mock price provider 跑範例資料
+- `.env` 與真實庫存資料已被 `.gitignore` 排除
+- 下一個建議功能：接入 `yfinance` price provider
+
+回家後建議流程：
+
+```powershell
+git clone https://github.com/yize00001/portfolio-watch.git
+cd portfolio-watch
+py -m venv .venv
+.venv\Scripts\activate
+pip install -e ".[dev]"
+python -m portfolio_watch --portfolio data\portfolio.example.csv
+pytest
+```
+
+下一次對話可以直接這樣開場：
+
+```text
+請繼續 portfolio-watch 專案。
+GitHub repo: https://github.com/yize00001/portfolio-watch
+目前狀態：Python MVP 骨架已 push 到 private repo，mock provider 可跑。
+目標：先確認 Python 環境與測試，接著實作 yfinance price provider。
+```
