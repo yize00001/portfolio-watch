@@ -1,0 +1,4 @@
+symbol,name,quantity,average_cost,currency,alert_change_percent,alert_gain_percent
+2330.TW,台積電,10,780,TWD,3,15
+AAPL,Apple Inc.,5,180,USD,3,12
+VOO,Vanguard S&P 500 ETF,3,430,USD,2,10
