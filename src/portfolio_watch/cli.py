@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from portfolio_watch.config import load_settings
-from portfolio_watch.notifier import TelegramNotifier
+from portfolio_watch.notifier import create_notifier
 from portfolio_watch.portfolio import load_positions
 from portfolio_watch.pricing import create_price_provider
 from portfolio_watch.watcher import build_snapshots
@@ -42,7 +42,11 @@ def main(argv: list[str] | None = None) -> int:
     print_report(snapshots)
 
     if args.notify:
-        notifier = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
+        notifier = create_notifier(
+            settings.notifier,
+            settings.telegram_bot_token,
+            settings.telegram_chat_id,
+        )
         notifier.send_snapshot_alerts(snapshots)
 
     return 0

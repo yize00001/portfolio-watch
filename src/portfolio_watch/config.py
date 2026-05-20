@@ -15,6 +15,7 @@ except ImportError:
 class Settings:
     portfolio_file: Path
     price_provider: str
+    notifier: str
     telegram_bot_token: str | None
     telegram_chat_id: str | None
     check_interval_seconds: int
@@ -27,6 +28,7 @@ def load_settings() -> Settings:
     return Settings(
         portfolio_file=Path(os.getenv("PORTFOLIO_FILE", "data/portfolio.example.csv")),
         price_provider=os.getenv("PRICE_PROVIDER", "mock"),
+        notifier=os.getenv("NOTIFIER", "none"),
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID") or None,
         check_interval_seconds=int(os.getenv("CHECK_INTERVAL_SECONDS", "300")),
