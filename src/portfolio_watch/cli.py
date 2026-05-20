@@ -18,6 +18,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to portfolio CSV. Defaults to PORTFOLIO_FILE or example data.",
     )
     parser.add_argument(
+        "--provider",
+        choices=["mock", "yfinance"],
+        help="Price provider override. Defaults to PRICE_PROVIDER env var (or 'mock').",
+    )
+    parser.add_argument(
         "--notify",
         action="store_true",
         help="Send Telegram alerts for triggered positions when Telegram settings are configured.",
@@ -31,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     portfolio_file = args.portfolio or settings.portfolio_file
 
     positions = load_positions(portfolio_file)
-    provider = create_price_provider(settings.price_provider)
+    provider = create_price_provider(args.provider or settings.price_provider)
     snapshots = build_snapshots(positions, provider)
 
     print_report(snapshots)
