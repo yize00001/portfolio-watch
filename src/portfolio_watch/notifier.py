@@ -32,16 +32,18 @@ class TelegramNotifier(Notifier):
         self._send_message("\n\n".join(messages))
 
     def _send_message(self, text: str) -> None:
+        self._send_message_to(self._chat_id, text)
+
+    def _send_message_to(self, chat_id: str, text: str) -> None:
         url = f"{self._API_BASE}/bot{self._bot_token}/sendMessage"
         try:
             response = requests.post(
                 url,
-                json={"chat_id": self._chat_id, "text": text},
+                json={"chat_id": chat_id, "text": text},
                 timeout=10,
             )
             response.raise_for_status()
         except requests.HTTPError as exc:
-            # Rebuild error without the URL (which contains the token)
             raise RuntimeError(
                 f"Telegram API error: HTTP {exc.response.status_code}"
             ) from None

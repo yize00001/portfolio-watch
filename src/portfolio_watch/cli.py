@@ -27,16 +27,39 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Send Telegram alerts for triggered positions when Telegram settings are configured.",
     )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Run as a Telegram bot: respond to /status and auto-alert during market hours.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
     args = build_parser().parse_args(argv)
     settings = load_settings()
     portfolio_file = args.portfolio or settings.portfolio_file
+    provider = create_price_provider(args.provider or settings.price_provider)
+
+    if args.watch:
+        from portfolio_watch.bot import PortfolioBot
+        from portfolio_watch.notifier import TelegramNotifier
+        if not settings.telegram_bot_token or not settings.telegram_chat_id:
+            print("Error: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in .env")
+            return 1
+        bot = PortfolioBot(
+            notifier=TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id),
+            portfolio_file=portfolio_file,
+            price_provider=provider,
+            check_interval=settings.check_interval_seconds,
+        )
+        bot.run()
+        return 0
 
     positions = load_positions(portfolio_file)
-    provider = create_price_provider(args.provider or settings.price_provider)
     snapshots = build_snapshots(positions, provider)
 
     print_report(snapshots)
