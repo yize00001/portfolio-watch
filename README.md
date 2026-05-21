@@ -1,100 +1,143 @@
 # portfolio-watch
 
-一個股票庫存監控工具。初版目標是讀取本機 CSV 庫存資料，抓取近即時股價，計算單檔股票的現價、成本、未實現損益與漲跌幅，並在達到設定門檻時發出通知。
+個人股票庫存監控工具。透過 Telegram Bot 即時查詢持股現況、未實現損益，並在漲跌幅或損益達到設定門檻時主動通知。
 
-## MVP 範圍
+## 功能
 
-- 讀取 `data/portfolio.example.csv` 格式的持股清單
-- 透過價格來源模組取得目前價格
-- 計算市值、未實現損益與報酬率
-- 預留交易時間內定期檢查的排程入口
-- 預留 Telegram Bot 通知介面
-- 使用 `.env` 管理 token 與個人設定
+- 透過 `yfinance` 取得近即時股價（支援台股、美股及所有 yfinance 支援的市場）
+- 計算每檔持股的市值、未實現損益與報酬率
+- Telegram Bot 指令查詢：
+  - `/status` — 查詢目前持股現況
+  - `/summary` — 查詢今日損益總結
+- 開市時間（週一至週五）每 5 分鐘自動檢查門檻，觸發才推播
+- 13:30 收盤後自動推送今日損益總結
+- 持股資料與 token 皆不進版控，安全管理個人資訊
 
 ## 專案結構
 
 ```text
 portfolio-watch/
   data/
-    portfolio.example.csv
+    portfolio.example.csv   # 持股範例（格式參考）
   src/
     portfolio_watch/
-      __init__.py
-      __main__.py
-      cli.py
-      config.py
-      market_hours.py
-      models.py
-      notifier.py
-      portfolio.py
-      pricing.py
-      watcher.py
-  tests/
-    test_portfolio.py
-  .env.example
-  .gitignore
+      bot.py                # Telegram Bot 主迴圈
+      cli.py                # CLI 入口
+      config.py             # 設定載入（.env）
+      market_hours.py       # 交易時間判斷
+      models.py             # 資料模型
+      notifier.py           # Telegram 通知
+      portfolio.py          # 讀取持股 CSV
+      pricing.py            # 價格來源（yfinance / mock）
+      watcher.py            # 快照計算
+  tests/                    # 單元測試
+  .env.example              # 環境變數範例
   pyproject.toml
 ```
 
 ## 快速開始
 
+### 1. 安裝套件
+
+建議使用 [uv](https://github.com/astral-sh/uv)：
+
 ```bash
-py -m venv .venv
-.venv\Scripts\activate
-pip install -e ".[dev]"
-python -m portfolio_watch --portfolio data/portfolio.example.csv
+uv venv --python 3.11
+uv pip install -e ".[dev]"
 ```
 
-如果環境使用 `python` 而不是 Windows 的 `py` launcher，可以把第一行改成：
+或使用傳統 pip：
 
 ```bash
 python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
+
+pip install -e ".[dev]"
 ```
 
-## 設定
-
-複製 `.env.example` 為 `.env`，再填入自己的設定。
+### 2. 設定環境變數
 
 ```bash
-copy .env.example .env
+cp .env.example .env   # Windows: copy .env.example .env
 ```
 
-真實庫存資料與 `.env` 不要提交到 GitHub。版控內只保留範例資料與程式碼。
+編輯 `.env`，填入你的設定：
 
-## 下一步
+```ini
+PORTFOLIO_FILE=data/portfolio.csv
+PRICE_PROVIDER=yfinance
+NOTIFIER=telegram
+TELEGRAM_BOT_TOKEN=你的 Bot Token
+TELEGRAM_CHAT_ID=你的 Chat ID
+CHECK_INTERVAL_SECONDS=300
+MARKET_TIMEZONE=Asia/Taipei
+```
 
-- 接入實際價格來源，例如券商 API 或行情 API
-- 完成 Telegram Bot 通知
-- 加入交易時間排程
-- 加入停利、停損、漲跌幅門檻設定
+取得 Telegram Bot Token 與 Chat ID 的方式：
 
-## Handoff
+1. Telegram 搜尋 `@BotFather` → `/newbot` → 取得 Token
+2. 傳訊息給你的 Bot，再開啟 `https://api.telegram.org/bot<TOKEN>/getUpdates`，找 `chat.id`
 
-目前狀態：
+### 3. 建立持股清單
 
-- Python MVP 骨架已建立
-- GitHub private repo 已建立並 push 到 `main`
-- CLI 可使用 mock price provider 跑範例資料
-- `.env` 與真實庫存資料已被 `.gitignore` 排除
-- 下一個建議功能：接入 `yfinance` price provider
+```bash
+cp data/portfolio.example.csv data/portfolio.csv
+```
 
-回家後建議流程：
+編輯 `data/portfolio.csv`，填入真實持股：
 
-```powershell
-git clone https://github.com/yize00001/portfolio-watch.git
-cd portfolio-watch
-py -m venv .venv
-.venv\Scripts\activate
-pip install -e ".[dev]"
-python -m portfolio_watch --portfolio data\portfolio.example.csv
+```csv
+symbol,name,quantity,average_cost,currency,alert_change_percent,alert_gain_percent
+0050.TW,元大台灣50,100,80.0,TWD,3,15
+AAPL,Apple Inc.,10,150.0,USD,3,20
+```
+
+| 欄位 | 說明 |
+|---|---|
+| `symbol` | 股票代號（台股加 `.TW`，例如 `0050.TW`） |
+| `quantity` | 持有股數 |
+| `average_cost` | 平均成本（每股） |
+| `currency` | 貨幣（TWD / USD） |
+| `alert_change_percent` | 今日漲跌幅門檻（選填） |
+| `alert_gain_percent` | 未實現損益門檻（選填） |
+
+### 4. 執行
+
+**一次性查詢（不啟動 Bot）：**
+
+```bash
+python -m portfolio_watch --portfolio data/portfolio.csv --provider yfinance
+```
+
+**啟動 Bot 模式（持續監控 + 回應指令）：**
+
+```bash
+python -m portfolio_watch --portfolio data/portfolio.csv --provider yfinance --watch
+```
+
+啟動後在 Telegram 傳 `/status` 或 `/summary` 即可查詢。
+
+## 測試
+
+```bash
 pytest
 ```
 
-下一次對話可以直接這樣開場：
+## 安全說明
 
-```text
-請繼續 portfolio-watch 專案。
-GitHub repo: https://github.com/yize00001/portfolio-watch
-目前狀態：Python MVP 骨架已 push 到 private repo，mock provider 可跑。
-目標：先確認 Python 環境與測試，接著實作 yfinance price provider。
-```
+- `.env` 與 `data/portfolio.csv` 已列入 `.gitignore`，不會上傳 GitHub
+- Telegram Bot Token 僅存在本機 `.env`，不會出現在程式碼或錯誤訊息中
+- 版控內只保留範例資料（`portfolio.example.csv`）與程式碼
+
+## 系統需求
+
+- Python 3.11+
+- 網路連線（yfinance 抓取行情）
+- Telegram 帳號（通知功能）
+
+## License
+
+MIT
