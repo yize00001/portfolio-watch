@@ -62,6 +62,27 @@ def format_alert(snapshot: PositionSnapshot) -> str:
     )
 
 
+def format_daily_summary(snapshots: list[PositionSnapshot]) -> str:
+    lines = ["📅 今日收盤總結\n"]
+    total_daily_gain = 0.0
+    total_market_value = 0.0
+
+    for s in snapshots:
+        daily_gain = s.market_value * (s.quote.change_percent / 100)
+        total_daily_gain += daily_gain
+        total_market_value += s.market_value
+        sign = "▲" if daily_gain >= 0 else "▼"
+        lines.append(
+            f"{sign} {s.position.symbol} {s.position.name}\n"
+            f"   今日: {s.quote.currency} {daily_gain:+,.2f} ({s.quote.change_percent:+.2f}%)\n"
+            f"   未實現: {s.quote.currency} {s.unrealized_gain:+,.2f} ({s.unrealized_gain_percent:+.2f}%)"
+        )
+
+    sign = "▲" if total_daily_gain >= 0 else "▼"
+    lines.append(f"\n{sign} 今日總損益：{total_daily_gain:+,.2f}")
+    return "\n".join(lines)
+
+
 def create_notifier(name: str, bot_token: str | None, chat_id: str | None) -> Notifier:
     if name == "none":
         return NoopNotifier()
