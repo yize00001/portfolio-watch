@@ -71,6 +71,8 @@ class PortfolioBot:
             message = update.get("message", {})
             text = message.get("text", "").strip()
             chat_id = str(message.get("chat", {}).get("id", ""))
+            if chat_id != self._notifier._chat_id:
+                continue
             if text == "/status":
                 self._send_status(chat_id)
             elif text == "/summary":
