@@ -87,6 +87,7 @@ class PortfolioBot:
 
     def run(self) -> None:
         logger.info("Bot started. DB mode: %s", self._use_db)
+        self._register_commands()
         while True:
             try:
                 self._handle_commands()
@@ -95,6 +96,21 @@ class PortfolioBot:
             except Exception as exc:
                 logger.error("Unexpected error: %s", exc)
             time.sleep(5)
+
+    def _register_commands(self) -> None:
+        url = f"{self._notifier._API_BASE}/bot{self._notifier._bot_token}/setMyCommands"
+        commands = [
+            {"command": "status",    "description": "目前持股現況與未實現損益"},
+            {"command": "summary",   "description": "今日損益總結"},
+            {"command": "positions", "description": "持股清單（含平均成本）"},
+            {"command": "buy",       "description": "新增買進 SYMBOL NAME 數量 成本 [幣別]"},
+            {"command": "sell",      "description": "記錄賣出 SYMBOL 數量"},
+            {"command": "help",      "description": "顯示所有指令說明"},
+        ]
+        try:
+            requests.post(url, json={"commands": commands}, timeout=10)
+        except requests.RequestException as exc:
+            logger.warning("Failed to register bot commands: %s", exc)
 
     # --- command polling ---
 
