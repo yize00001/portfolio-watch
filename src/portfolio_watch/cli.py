@@ -32,6 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run as a Telegram bot: respond to /status and auto-alert during market hours.",
     )
+    parser.add_argument(
+        "--migrate",
+        action="store_true",
+        help="Import portfolio CSV into SQLite DB (data/portfolio.db) and exit.",
+    )
     return parser
 
 
@@ -43,6 +48,23 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings()
     portfolio_file = args.portfolio or settings.portfolio_file
     provider = create_price_provider(args.provider or settings.price_provider)
+
+    if args.migrate:
+        from portfolio_watch.database import DB_PATH, add_lot, init_db
+        db_path = DB_PATH
+        positions = load_positions(portfolio_file)
+        init_db(db_path)
+        for pos in positions:
+            add_lot(
+                pos.symbol,
+                pos.name,
+                pos.quantity,
+                pos.average_cost,
+                pos.currency,
+                db_path=db_path,
+            )
+        print(f"Migrated {len(positions)} position(s) from {portfolio_file} → {db_path}")
+        return 0
 
     if args.watch:
         from portfolio_watch.bot import PortfolioBot
