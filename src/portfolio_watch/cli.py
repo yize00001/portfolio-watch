@@ -50,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     provider = create_price_provider(args.provider or settings.price_provider)
 
     if args.migrate:
-        from portfolio_watch.database import DB_PATH, add_lot, init_db
+        from portfolio_watch.database import DB_PATH, add_lot, init_db, set_alert
         db_path = DB_PATH
         positions = load_positions(portfolio_file)
         init_db(db_path)
@@ -63,6 +63,13 @@ def main(argv: list[str] | None = None) -> int:
                 pos.currency,
                 db_path=db_path,
             )
+            if pos.alert_change_percent is not None or pos.alert_gain_percent is not None:
+                set_alert(
+                    pos.symbol,
+                    pos.alert_change_percent,
+                    pos.alert_gain_percent,
+                    db_path=db_path,
+                )
         print(f"Migrated {len(positions)} position(s) from {portfolio_file} → {db_path}")
         return 0
 
