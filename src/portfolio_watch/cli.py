@@ -37,6 +37,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Import portfolio CSV into SQLite DB (data/portfolio.db) and exit.",
     )
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="Start web dashboard at http://localhost:8000",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port for web dashboard (default: 8000)",
+    )
     return parser
 
 
@@ -71,6 +82,13 @@ def main(argv: list[str] | None = None) -> int:
                     db_path=db_path,
                 )
         print(f"Migrated {len(positions)} position(s) from {portfolio_file} → {db_path}")
+        return 0
+
+    if args.web:
+        import uvicorn
+        from portfolio_watch.web import app, init_web
+        init_web(provider)
+        uvicorn.run(app, host="0.0.0.0", port=args.port)
         return 0
 
     if args.watch:
