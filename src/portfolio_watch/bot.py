@@ -8,7 +8,7 @@ from pathlib import Path
 
 import requests
 
-from portfolio_watch.database import DB_PATH, add_lot, get_positions, init_db, sell_shares
+from portfolio_watch.database import DB_PATH, add_lot, get_positions, init_db, sell_shares, set_alert
 from portfolio_watch.market_hours import is_weekday_market_time
 from portfolio_watch.models import PositionSnapshot
 from portfolio_watch.notifier import TelegramNotifier, format_daily_summary
@@ -34,6 +34,12 @@ HELP_TEXT = """\
 
 /sell SYMBOL QTY
   範例：/sell 3481.TW 10
+
+/setalert — 查看所有警示設定
+/setalert SYMBOL change PERCENT — 設定漲跌幅警示
+/setalert SYMBOL gain PERCENT   — 設定損益警示
+/setalert SYMBOL off            — 關閉警示
+  範例：/setalert 3481.TW change 5
 
 /help — 顯示此說明"""
 
@@ -105,6 +111,7 @@ class PortfolioBot:
             {"command": "positions", "description": "持股清單（含平均成本）"},
             {"command": "buy",       "description": "新增買進 SYMBOL NAME 數量 成本 [幣別]"},
             {"command": "sell",      "description": "記錄賣出 SYMBOL 數量"},
+            {"command": "setalert",  "description": "設定或查看警示門檻"},
             {"command": "help",      "description": "顯示所有指令說明"},
         ]
         try:
@@ -137,6 +144,8 @@ class PortfolioBot:
             self._handle_buy(chat_id, text)
         elif cmd == "/sell":
             self._handle_sell(chat_id, text)
+        elif cmd == "/setalert":
+            self._handle_setalert(chat_id, text)
         elif cmd == "/help":
             self._notifier._send_message_to(chat_id, HELP_TEXT)
 
@@ -260,6 +269,95 @@ class PortfolioBot:
             self._notifier._send_message_to(chat_id, f"❌ {exc}")
         except Exception as exc:
             self._notifier._send_message_to(chat_id, f"賣出失敗：{exc}")
+
+    def _handle_setalert(self, chat_id: str, text: str) -> None:
+        parts = text.split()
+
+        if len(parts) == 1:
+            self._send_alert_settings(chat_id)
+            return
+
+        if len(parts) < 3:
+            self._notifier._send_message_to(
+                chat_id,
+                "用法：\n"
+                "/setalert — 查看所有警示\n"
+                "/setalert SYMBOL change 5 — 設定漲跌幅警示\n"
+                "/setalert SYMBOL gain 10 — 設定損益警示\n"
+                "/setalert SYMBOL off — 關閉警示",
+            )
+            return
+
+        symbol = parts[1].upper()
+        if not _SYMBOL_RE.match(symbol):
+            self._notifier._send_message_to(chat_id, f"股票代號格式不正確：{symbol}")
+            return
+
+        action = parts[2].lower()
+
+        if action == "off":
+            try:
+                set_alert(symbol, None, None, db_path=self._db_path)
+                self._notifier._send_message_to(chat_id, f"✅ 已關閉 {symbol} 所有警示")
+            except Exception as exc:
+                self._notifier._send_message_to(chat_id, f"設定失敗：{exc}")
+            return
+
+        if action not in ("change", "gain") or len(parts) < 4:
+            self._notifier._send_message_to(
+                chat_id,
+                "用法：\n"
+                "/setalert SYMBOL change 5 — 設定漲跌幅警示\n"
+                "/setalert SYMBOL gain 10 — 設定損益警示\n"
+                "/setalert SYMBOL off — 關閉警示",
+            )
+            return
+
+        try:
+            percent = float(parts[3])
+        except ValueError:
+            self._notifier._send_message_to(chat_id, "百分比必須是數字。")
+            return
+
+        if percent <= 0:
+            self._notifier._send_message_to(chat_id, "百分比必須大於 0。")
+            return
+
+        positions = load_positions_from_db(self._db_path)
+        existing = next((p for p in positions if p.symbol == symbol), None)
+        if existing is None:
+            self._notifier._send_message_to(chat_id, f"找不到持股：{symbol}")
+            return
+
+        if action == "change":
+            new_change, new_gain = percent, existing.alert_gain_percent
+            label = "漲跌幅"
+        else:
+            new_change, new_gain = existing.alert_change_percent, percent
+            label = "未實現損益"
+
+        try:
+            set_alert(symbol, new_change, new_gain, db_path=self._db_path)
+            self._notifier._send_message_to(
+                chat_id, f"✅ 已設定 {symbol} {label}警示：±{percent:.1f}%"
+            )
+        except Exception as exc:
+            self._notifier._send_message_to(chat_id, f"設定失敗：{exc}")
+
+    def _send_alert_settings(self, chat_id: str) -> None:
+        try:
+            positions = load_positions_from_db(self._db_path)
+            if not positions:
+                self._notifier._send_message_to(chat_id, "目前沒有持股紀錄。")
+                return
+            lines = ["🔔 警示設定：\n"]
+            for p in positions:
+                change = f"漲跌 ±{p.alert_change_percent:.1f}%" if p.alert_change_percent else "漲跌：未設定"
+                gain = f"損益 ±{p.alert_gain_percent:.1f}%" if p.alert_gain_percent else "損益：未設定"
+                lines.append(f"{p.symbol} {p.name}\n  {change}｜{gain}")
+            self._notifier._send_message_to(chat_id, "\n".join(lines))
+        except Exception as exc:
+            self._notifier._send_message_to(chat_id, f"查詢失敗：{exc}")
 
     # --- scheduled alert check ---
 
