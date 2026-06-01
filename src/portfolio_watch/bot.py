@@ -18,6 +18,8 @@ from portfolio_watch.watcher import build_snapshots
 
 logger = logging.getLogger(__name__)
 
+_MARKET_OPEN_HOUR = 9
+_MARKET_OPEN_MINUTE = 0
 _MARKET_CLOSE_HOUR = 13
 _MARKET_CLOSE_MINUTE = 30
 _SYMBOL_RE = re.compile(r'^[A-Z0-9]{1,10}(\.[A-Z]{1,4})?$')
@@ -89,6 +91,7 @@ class PortfolioBot:
         self._use_db = db_path.exists()
         self._offset = 0
         self._last_check: float = 0
+        self._last_open_date: date | None = None
         self._last_summary_date: date | None = None
 
     def run(self) -> None:
@@ -98,6 +101,7 @@ class PortfolioBot:
             try:
                 self._handle_commands()
                 self._maybe_check_alerts()
+                self._maybe_send_open_summary()
                 self._maybe_send_close_summary()
             except Exception as exc:
                 logger.error("Unexpected error: %s", exc)
@@ -372,6 +376,43 @@ class PortfolioBot:
             self._notifier.send_snapshot_alerts(snapshots)
         except Exception as exc:
             logger.error("Alert check failed: %s", exc)
+
+    # --- auto open summary at 9:00 ---
+
+    def _maybe_send_open_summary(self) -> None:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        now = datetime.now(ZoneInfo("Asia/Taipei"))
+        today = now.date()
+
+        if now.weekday() >= 5:
+            return
+        if now.hour != _MARKET_OPEN_HOUR or now.minute != _MARKET_OPEN_MINUTE:
+            return
+        if self._last_open_date == today:
+            return
+
+        self._last_open_date = today
+        try:
+            snapshots = self._fetch_snapshots()
+            total_value = sum(s.market_value for s in snapshots)
+            total_daily_gain = sum(s.market_value * (s.quote.change_percent / 100) for s in snapshots)
+            lines = ["🔔 早安！台股開盤了\n"]
+            for s in snapshots:
+                lines.append(
+                    f"{s.position.symbol} {s.position.name}\n"
+                    f"現價：{s.quote.currency} {s.quote.price:,.2f} ({s.quote.change_percent:+.2f}%)\n"
+                    f"未實現：{s.quote.currency} {s.unrealized_gain:,.2f} ({s.unrealized_gain_percent:+.2f}%)"
+                )
+            lines.append(
+                f"\n總市值：{total_value:,.0f}"
+                f"　今日損益：{total_daily_gain:+,.0f}"
+            )
+            self._notifier._send_message("\n".join(lines))
+            logger.info("Market open summary sent.")
+        except Exception as exc:
+            logger.error("Open summary failed: %s", exc)
 
     # --- auto close summary at 13:30 ---
 
