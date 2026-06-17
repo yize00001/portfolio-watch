@@ -10,7 +10,7 @@ import requests
 
 from portfolio_watch.database import DB_PATH, add_lot, get_positions, init_db, sell_shares, set_alert
 from portfolio_watch.market_hours import is_weekday_market_time
-from portfolio_watch.models import PositionSnapshot
+from portfolio_watch.models import Position, PositionSnapshot
 from portfolio_watch.notifier import TelegramNotifier, format_daily_summary
 from portfolio_watch.portfolio import load_positions, load_positions_from_db
 from portfolio_watch.pricing import PriceProvider
@@ -22,6 +22,7 @@ _MARKET_OPEN_HOUR = 9
 _MARKET_OPEN_MINUTE = 0
 _MARKET_CLOSE_HOUR = 13
 _MARKET_CLOSE_MINUTE = 30
+_LIMIT_THRESHOLD = 9.5
 _SYMBOL_RE = re.compile(r'^[A-Z0-9]{1,10}(\.[A-Z]{1,4})?$')
 
 HELP_TEXT = """\
@@ -42,6 +43,9 @@ HELP_TEXT = """\
 /setalert SYMBOL gain PERCENT   — 設定損益警示
 /setalert SYMBOL off            — 關閉警示
   範例：/setalert 3481.TW change 5
+
+/quote SYMBOL — 即時查詢任一股票價格
+  範例：/quote 0050.TW
 
 /help — 顯示此說明"""
 
@@ -93,6 +97,7 @@ class PortfolioBot:
         self._last_check: float = 0
         self._last_open_date: date | None = None
         self._last_summary_date: date | None = None
+        self._limit_notified: set[tuple[str, date, str]] = set()
 
     def run(self) -> None:
         logger.info("Bot started. DB mode: %s", self._use_db)
@@ -116,6 +121,7 @@ class PortfolioBot:
             {"command": "buy",       "description": "新增買進 SYMBOL NAME 數量 成本 [幣別]"},
             {"command": "sell",      "description": "記錄賣出 SYMBOL 數量"},
             {"command": "setalert",  "description": "設定或查看警示門檻"},
+            {"command": "quote",     "description": "即時查詢任一股票價格"},
             {"command": "help",      "description": "顯示所有指令說明"},
         ]
         try:
@@ -150,6 +156,8 @@ class PortfolioBot:
             self._handle_sell(chat_id, text)
         elif cmd == "/setalert":
             self._handle_setalert(chat_id, text)
+        elif cmd == "/quote":
+            self._handle_quote(chat_id, text)
         elif cmd == "/help":
             self._notifier._send_message_to(chat_id, HELP_TEXT)
 
@@ -274,6 +282,32 @@ class PortfolioBot:
         except Exception as exc:
             self._notifier._send_message_to(chat_id, f"賣出失敗：{exc}")
 
+    def _handle_quote(self, chat_id: str, text: str) -> None:
+        parts = text.split()
+        if len(parts) < 2:
+            self._notifier._send_message_to(
+                chat_id, "用法：/quote SYMBOL\n範例：/quote 0050.TW"
+            )
+            return
+
+        symbol = parts[1].upper()
+        if not _SYMBOL_RE.match(symbol):
+            self._notifier._send_message_to(chat_id, f"股票代號格式不正確：{symbol}")
+            return
+
+        try:
+            currency = "TWD" if symbol.endswith(".TW") or symbol.endswith(".TWO") else "USD"
+            dummy = Position(symbol=symbol, name=symbol, quantity=0, average_cost=0, currency=currency)
+            quote = self._price_provider.get_quote(dummy)
+            self._notifier._send_message_to(
+                chat_id,
+                f"📈 {symbol}\n"
+                f"現價：{quote.currency} {quote.price:,.2f}\n"
+                f"漲跌：{quote.change_percent:+.2f}%"
+            )
+        except Exception as exc:
+            self._notifier._send_message_to(chat_id, f"查詢失敗：{exc}")
+
     def _handle_setalert(self, chat_id: str, text: str) -> None:
         parts = text.split()
 
@@ -372,8 +406,29 @@ class PortfolioBot:
             return
         self._last_check = time.time()
         try:
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            today = datetime.now(ZoneInfo("Asia/Taipei")).date()
             snapshots = self._fetch_snapshots()
             self._notifier.send_snapshot_alerts(snapshots)
+            for s in snapshots:
+                pct = s.quote.change_percent
+                if pct >= _LIMIT_THRESHOLD:
+                    key = (s.position.symbol, today, "up")
+                    if key not in self._limit_notified:
+                        self._limit_notified.add(key)
+                        self._notifier._send_message(
+                            f"🚀 漲停警示！\n{s.position.symbol} {s.position.name}\n"
+                            f"漲幅：{pct:+.2f}%　現價：{s.quote.currency} {s.quote.price:,.2f}"
+                        )
+                elif pct <= -_LIMIT_THRESHOLD:
+                    key = (s.position.symbol, today, "down")
+                    if key not in self._limit_notified:
+                        self._limit_notified.add(key)
+                        self._notifier._send_message(
+                            f"🔻 跌停警示！\n{s.position.symbol} {s.position.name}\n"
+                            f"跌幅：{pct:+.2f}%　現價：{s.quote.currency} {s.quote.price:,.2f}"
+                        )
         except Exception as exc:
             logger.error("Alert check failed: %s", exc)
 
