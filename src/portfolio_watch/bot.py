@@ -9,7 +9,7 @@ from pathlib import Path
 import requests
 
 from portfolio_watch.database import DB_PATH, add_lot, get_positions, init_db, sell_shares, set_alert
-from portfolio_watch.market_hours import is_weekday_market_time
+from portfolio_watch.market_hours import is_trading_day, is_weekday_market_time
 from portfolio_watch.models import Position, PositionSnapshot
 from portfolio_watch.notifier import TelegramNotifier, format_daily_summary
 from portfolio_watch.portfolio import load_positions, load_positions_from_db
@@ -441,7 +441,7 @@ class PortfolioBot:
         now = datetime.now(ZoneInfo("Asia/Taipei"))
         today = now.date()
 
-        if now.weekday() >= 5:
+        if not is_trading_day(today):
             return
         if now.hour != _MARKET_OPEN_HOUR or now.minute != _MARKET_OPEN_MINUTE:
             return
@@ -478,7 +478,7 @@ class PortfolioBot:
         now = datetime.now(ZoneInfo("Asia/Taipei"))
         today = now.date()
 
-        if now.weekday() >= 5:
+        if not is_trading_day(today):
             return
         if now.hour != _MARKET_CLOSE_HOUR or now.minute != _MARKET_CLOSE_MINUTE:
             return
